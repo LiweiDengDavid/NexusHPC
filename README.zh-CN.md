@@ -1,10 +1,10 @@
-# Remote Workflow PBS
+# NexusHPC
 
 **在本地维护代码，在集群运行实验，为每个项目保存独立配置。**
 
 [English](README.md) | **简体中文**
 
-这是一个面向科研项目的 Codex skill，适用于使用 SSH、rsync 和 OpenPBS/PBS Professional 的工作流。安装一次 skill，为每个新项目初始化配置，之后便可复用该项目保存的设置，同步代码、运行 PBS 作业和回收结果。
+NexusHPC 是一个面向科研项目的 Codex skill，适用于使用 SSH、rsync 和 OpenPBS/PBS Professional 的工作流。安装一次 skill，为每个新项目初始化配置，之后便可复用该项目保存的设置，同步代码、运行 PBS 作业和回收结果。
 
 ## 安装一次，项目各自独立
 
@@ -56,12 +56,19 @@ flowchart LR
 
 ### 1. 安装一次 skill
 
-下载或克隆本仓库。在包含 `SKILL.md`、`bin/` 和 `template/` 的目录中运行：
+克隆本仓库：
+
+```bash
+git clone https://github.com/LiweiDengDavid/NexusHPC.git
+cd NexusHPC
+```
+
+在包含 `SKILL.md`、`bin/` 和 `template/` 的目录中运行：
 
 ```bash
 (
   set -eu
-  RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/remote-workflow-pbs"
+  RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/nexushpc"
   mkdir -p "$(dirname "$RW_SKILL_DIR")"
   mkdir "$RW_SKILL_DIR"
   cp -R SKILL.md agents bin template README.md README.zh-CN.md "$RW_SKILL_DIR/"
@@ -74,12 +81,12 @@ flowchart LR
 
 在 Codex 中打开科研项目，然后提出请求：
 
-> 使用 $remote-workflow-pbs 初始化这个项目，并绑定到我的 PBS 集群。复用已有设置，向我询问缺少的连接信息；先完成项目配置，暂时不要上传文件或提交作业。
+> 使用 $nexushpc 初始化这个项目，并绑定到我的 PBS 集群。复用已有设置，向我询问缺少的连接信息；先完成项目配置，暂时不要上传文件或提交作业。
 
 也可以直接初始化。将示例路径替换为已存在的项目目录：
 
 ```bash
-RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/remote-workflow-pbs"
+RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/nexushpc"
 RW_PROJECT="/absolute/path/to/your/project"
 bash "$RW_SKILL_DIR/bin/remote-workflow" init "$RW_PROJECT"
 ```
@@ -214,7 +221,7 @@ bash "$RW_PROJECT/scripts/remote-workflow" sync --dry-run
 ## 仓库结构与维护
 
 ```text
-remote-workflow-pbs/
+NexusHPC/
 ├── README.md             英文文档
 ├── README.zh-CN.md       中文文档
 ├── SKILL.md              Codex 加载的指令

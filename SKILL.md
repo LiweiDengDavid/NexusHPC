@@ -1,13 +1,13 @@
 ---
-name: remote-workflow-pbs
+name: nexushpc
 description: "Manage local-first research projects on an SSH-accessible OpenPBS or PBS Professional cluster: initialize a project, preview and sync code, submit resumable jobs, inspect status, or retrieve selected results. Use for an explicitly requested remote PBS workflow."
 ---
 
-# Remote Workflow — shared PBS edition
+# NexusHPC
 
 Support macOS/Linux locally and Linux with OpenPBS/PBS Professional remotely. Require Bash, SSH, rsync, conda, and remote GNU `timeout`. The bundled PBS resource syntax is `select=1:ngpus=...:ncpus=...:mem=...`; confirm the cluster supports these resources. Slurm and Torque are outside this skill's supported scope. Use existing SSH configuration; do not install software, change SSH settings, or create environments merely to load the skill.
 
-Resolve `SKILL_ROOT` to this folder and `PROJECT` to the user's absolute project directory. Run `bash "$SKILL_ROOT/bin/remote-workflow" <operation> "$PROJECT"`. After initialization, prefer `bash "$PROJECT/scripts/remote-workflow" <operation>`: without a project argument it uses its own project root, regardless of the current directory. Always pass the target project when using the skill-level command; `init` needs the full skill folder. Share the entire folder, including hidden files under `template/.workflow/`; recipients can place it in `${CODEX_HOME:-$HOME/.codex}/skills/remote-workflow-pbs/`.
+Resolve `SKILL_ROOT` to this folder and `PROJECT` to the user's absolute project directory. Run `bash "$SKILL_ROOT/bin/remote-workflow" <operation> "$PROJECT"`. After initialization, prefer `bash "$PROJECT/scripts/remote-workflow" <operation>`: without a project argument it uses its own project root, regardless of the current directory. Always pass the target project when using the skill-level command; `init` needs the full skill folder. Share the entire folder, including hidden files under `template/.workflow/`; recipients can place it in `${CODEX_HOME:-$HOME/.codex}/skills/nexushpc/`.
 
 ## Bind each project once
 

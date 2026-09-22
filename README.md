@@ -1,10 +1,10 @@
-# Remote Workflow PBS
+# NexusHPC
 
 **Keep your code local. Run experiments on your cluster. Bind the workflow to each project.**
 
 **English** | [简体中文](README.zh-CN.md)
 
-A Codex skill for research projects that use SSH, rsync, and OpenPBS/PBS Professional. Install the skill once, initialize each new project, and reuse that project's saved settings for code synchronization, PBS jobs, and result retrieval.
+NexusHPC is a Codex skill for research projects that use SSH, rsync, and OpenPBS/PBS Professional. Install the skill once, initialize each new project, and reuse that project's saved settings for code synchronization, PBS jobs, and result retrieval.
 
 [Quick start](#quick-start) · [Configuration](#configuration) · [Commands](#commands) · [Troubleshooting](#troubleshooting)
 
@@ -58,12 +58,19 @@ The optional checkpoint helper uses PyTorch and NumPy. The CLI itself is a Bash 
 
 ### 1. Install the skill once
 
-Download or clone this repository. From the directory containing `SKILL.md`, `bin/`, and `template/`, run:
+Clone this repository:
+
+```bash
+git clone https://github.com/LiweiDengDavid/NexusHPC.git
+cd NexusHPC
+```
+
+From the directory containing `SKILL.md`, `bin/`, and `template/`, run:
 
 ```bash
 (
   set -eu
-  RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/remote-workflow-pbs"
+  RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/nexushpc"
   mkdir -p "$(dirname "$RW_SKILL_DIR")"
   mkdir "$RW_SKILL_DIR"
   cp -R SKILL.md agents bin template README.md README.zh-CN.md "$RW_SKILL_DIR/"
@@ -76,12 +83,12 @@ This is a fresh-install command: it stops if the destination already exists. Kee
 
 Open your research project in Codex and ask:
 
-> Use $remote-workflow-pbs to initialize and bind this project to my PBS cluster. Reuse any existing settings, ask for missing connection details, and configure the project without uploading or submitting anything yet.
+> Use $nexushpc to initialize and bind this project to my PBS cluster. Reuse any existing settings, ask for missing connection details, and configure the project without uploading or submitting anything yet.
 
 Or initialize it directly. Replace the example path with an existing project directory:
 
 ```bash
-RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/remote-workflow-pbs"
+RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/nexushpc"
 RW_PROJECT="/absolute/path/to/your/project"
 bash "$RW_SKILL_DIR/bin/remote-workflow" init "$RW_PROJECT"
 ```
@@ -216,7 +223,7 @@ The 10 MiB rule is a skill instruction, not a CLI-enforced file-size cap. The Gi
 ## Repository layout and maintenance
 
 ```text
-remote-workflow-pbs/
+NexusHPC/
 ├── README.md             English documentation
 ├── README.zh-CN.md       Chinese documentation
 ├── SKILL.md              Instructions loaded by Codex
