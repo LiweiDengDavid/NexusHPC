@@ -1,0 +1,14 @@
+# Project-relative source/result paths eligible for `github-stage`.
+# .gitignore, the secret guard, and the 99 MiB guard still apply.
+AGENTS.md
+README.md
+.gitignore
+.workflow
+configs
+data/README.md
+scripts
+src
+tests
+pbs
+docs
+results

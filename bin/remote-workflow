@@ -1,0 +1,411 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOOLKIT_ROOT="$(cd "${SELF_DIR}/.." && pwd)"
+TEMPLATE_ROOT="${TOOLKIT_ROOT}/template"
+MAX_GITHUB_BYTES=$((99 * 1024 * 1024))
+
+usage() {
+  cat <<'EOF'
+Usage:
+  remote-workflow init PROJECT_ROOT
+  remote-workflow doctor PROJECT_ROOT
+  remote-workflow sync PROJECT_ROOT [--dry-run]
+  remote-workflow submit PROJECT_ROOT [--dry-run]
+  remote-workflow status PROJECT_ROOT
+  remote-workflow pull PROJECT_ROOT [--dry-run]
+  remote-workflow github-check PROJECT_ROOT
+  remote-workflow github-stage PROJECT_ROOT
+
+Project-installed scripts default to their own project; the skill entrypoint
+defaults to the current directory. init always requires PROJECT_ROOT.
+EOF
+}
+
+die() {
+  echo "ERROR: $*" >&2
+  exit 2
+}
+
+absolute_dir() {
+  local path="$1"
+  [[ -d "${path}" ]] || die "Directory does not exist: ${path}"
+  (cd "${path}" && pwd)
+}
+
+parse_project_and_dry_run() {
+  local first="${1:-}"
+  PROJECT_INPUT="${PWD}"
+  if [[ "${SELF_DIR}" == "${TOOLKIT_ROOT}/scripts" ]]; then
+    PROJECT_INPUT="${TOOLKIT_ROOT}"
+  fi
+  DRY_RUN=0
+  if [[ -n "${first}" && "${first}" != "--dry-run" ]]; then
+    PROJECT_INPUT="${first}"
+    shift
+  fi
+  while (($#)); do
+    case "$1" in
+      --dry-run) DRY_RUN=1 ;;
+      *) die "Unknown option: $1" ;;
+    esac
+    shift
+  done
+  PROJECT_ROOT="$(absolute_dir "${PROJECT_INPUT}")"
+}
+
+load_project_config() {
+  case "${command_name}" in github-check|github-stage) return 0 ;; esac
+  local config="${PROJECT_ROOT}/.workflow/config.env"
+  [[ -f "${config}" ]] || die "Missing ${config}; run 'remote-workflow init ${PROJECT_ROOT}' first."
+  # shellcheck source=/dev/null
+  source "${config}"
+  QSUB_BIN="${QSUB_BIN:-qsub}"
+  QSTAT_BIN="${QSTAT_BIN:-qstat}"
+  QDEL_BIN="${QDEL_BIN:-qdel}"
+  CONDA_SH="${CONDA_SH:-}"
+  : "${REMOTE_HOST:?REMOTE_HOST is required}"
+  : "${REMOTE_BASE_DIR:?REMOTE_BASE_DIR is required}"
+  : "${LOCAL_CONDA_ENV:?LOCAL_CONDA_ENV is required}"
+  : "${REMOTE_CONDA_ENV:?REMOTE_CONDA_ENV is required}"
+  : "${PBS_QUEUE:?PBS_QUEUE is required}"
+  : "${PBS_WALLTIME:?PBS_WALLTIME is required}"
+  : "${SLICE_SECONDS:?SLICE_SECONDS is required}"
+  : "${TERM_GRACE_SECONDS:?TERM_GRACE_SECONDS is required}"
+  : "${CHECKPOINT_FILE:?CHECKPOINT_FILE is required}"
+  : "${DONE_FILE:?DONE_FILE is required}"
+
+  if [[ -z "${PROJECT_SLUG:-}" ]]; then
+    PROJECT_SLUG="$(basename "${PROJECT_ROOT}" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9._-')"
+  fi
+  [[ -n "${PROJECT_SLUG}" ]] || die "PROJECT_SLUG resolved to an empty value."
+  [[ "${PROJECT_SLUG}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || die "PROJECT_SLUG must start with a letter or digit and contain only letters, digits, dots, underscores, or hyphens."
+  [[ "${REMOTE_BASE_DIR}" == /* && "${REMOTE_BASE_DIR}" != / ]] || die "REMOTE_BASE_DIR must be an absolute remote directory below /."
+  valid_relative_path "${CHECKPOINT_FILE}" || die "CHECKPOINT_FILE must be a safe project-relative path."
+  valid_relative_path "${DONE_FILE}" || die "DONE_FILE must be a safe project-relative path."
+
+  [[ "${SLICE_SECONDS}" =~ ^[0-9]+$ ]] || die "SLICE_SECONDS must be an integer."
+  [[ "${TERM_GRACE_SECONDS}" =~ ^[0-9]+$ ]] || die "TERM_GRACE_SECONDS must be an integer."
+  if [[ "${PBS_WALLTIME}" =~ ^([0-9]{2,}):([0-9]{2}):([0-9]{2})$ ]]; then
+    local wall_seconds
+    wall_seconds=$((10#${BASH_REMATCH[1]} * 3600 + 10#${BASH_REMATCH[2]} * 60 + 10#${BASH_REMATCH[3]}))
+    (( 10#${BASH_REMATCH[2]} < 60 && 10#${BASH_REMATCH[3]} < 60 )) || die "PBS_WALLTIME minutes and seconds must be below 60."
+    SLICE_SECONDS=$((10#${SLICE_SECONDS}))
+    TERM_GRACE_SECONDS=$((10#${TERM_GRACE_SECONDS}))
+    (( SLICE_SECONDS > 0 && TERM_GRACE_SECONDS > 0 )) || die "Slice and grace must be positive."
+    (( SLICE_SECONDS + TERM_GRACE_SECONDS < wall_seconds )) || die "SLICE_SECONDS + TERM_GRACE_SECONDS must leave PBS cleanup time."
+  else
+    die "PBS_WALLTIME must use HH:MM:SS."
+  fi
+  REMOTE_PROJECT_DIR="${REMOTE_BASE_DIR%/}/${PROJECT_SLUG}"
+}
+
+shell_quote() {
+  printf '%q' "$1"
+}
+
+remote_exec() {
+  ssh "${REMOTE_HOST}" "$1"
+}
+
+init_project() {
+  local target marker new_config=0 project_slug
+  target="$(absolute_dir "${1:?PROJECT_ROOT is required for init}")"
+  [[ -e "${target}/.workflow/config.env" || -L "${target}/.workflow/config.env" ]] || new_config=1
+  command -v rsync >/dev/null 2>&1 || die "rsync is required."
+  [[ -d "${TEMPLATE_ROOT}" ]] || die "init needs the full skill package; use its bin/remote-workflow."
+  rsync -a --ignore-existing --exclude=.DS_Store --exclude=__pycache__/ --exclude='*.pyc' "${TEMPLATE_ROOT}/" "${target}/"
+  mkdir -p "${target}/scripts"
+  if ((new_config)); then
+    project_slug="$(basename "${target}" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9._-')"
+    if [[ "${project_slug}" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
+      sed "s/^PROJECT_SLUG=\"\"$/PROJECT_SLUG=\"${project_slug}\"/" \
+        "${TEMPLATE_ROOT}/.workflow/config.env" > "${target}/.workflow/config.env"
+    else
+      echo "Set a stable PROJECT_SLUG in .workflow/config.env before binding this project."
+    fi
+  fi
+  if [[ ! -e "${target}/scripts/remote-workflow" ]]; then
+    cp "${TOOLKIT_ROOT}/bin/remote-workflow" "${target}/scripts/remote-workflow"
+  fi
+
+  marker="# BEGIN REMOTE-WORKFLOW MANAGED IGNORE"
+  if [[ ! -f "${target}/.gitignore" ]] || ! grep -Fq "${marker}" "${target}/.gitignore"; then
+    cat >> "${target}/.gitignore" <<'EOF'
+
+# BEGIN REMOTE-WORKFLOW MANAGED IGNORE
+.DS_Store
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+tmp/
+outputs/
+data/raw/
+data/external/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+# END REMOTE-WORKFLOW MANAGED IGNORE
+EOF
+  fi
+
+  chmod +x "${target}/.workflow/remote/"*.sh "${target}/scripts/remote-workflow"
+  echo "Installed workflow without overwriting existing files: ${target}"
+  echo "Project configuration: ${target}/.workflow/config.env"
+  echo "Next: complete this project's remote binding; set TRAIN_COMMAND when submitting."
+  if [[ -f "${target}/AGENTS.md" ]] && ! cmp -s "${target}/AGENTS.md" "${TEMPLATE_ROOT}/AGENTS.md"; then
+    echo "NOTE: an existing AGENTS.md was preserved; merge the PBS/resume rules if they are absent."
+  fi
+}
+
+sync_project() {
+  local exclude_file remote_q mkdir_cmd rsync_args
+  exclude_file="${PROJECT_ROOT}/.workflow/sync-exclude.txt"
+  [[ -f "${exclude_file}" ]] || die "Missing ${exclude_file}"
+  command -v rsync >/dev/null 2>&1 || die "rsync is required."
+  command -v ssh >/dev/null 2>&1 || die "ssh is required."
+
+  remote_q="$(shell_quote "${REMOTE_PROJECT_DIR}")"
+  mkdir_cmd="mkdir -p ${remote_q} ${remote_q}/outputs/logs/pbs_spool ${remote_q}/outputs/status"
+  if ((DRY_RUN)); then
+    echo "DRY-RUN remote: ssh ${REMOTE_HOST} ${mkdir_cmd}"
+  else
+    remote_exec "${mkdir_cmd}"
+  fi
+
+  rsync_args=(-az --itemize-changes --out-format='%i %l %n%L' --exclude-from="${exclude_file}")
+  if [[ "${SYNC_DELETE:-1}" == "1" ]]; then
+    rsync_args+=(--delete)
+  fi
+  if ((DRY_RUN)); then
+    rsync_args+=(--dry-run)
+  fi
+
+  echo "Sync: ${PROJECT_ROOT}/ -> ${REMOTE_HOST}:${REMOTE_PROJECT_DIR}/"
+  rsync "${rsync_args[@]}" "${PROJECT_ROOT}/" "${REMOTE_HOST}:${REMOTE_PROJECT_DIR}/"
+}
+
+submit_project() {
+  [[ -n "${TRAIN_COMMAND:-}" ]] || die "TRAIN_COMMAND is empty in ${PROJECT_ROOT}/.workflow/config.env"
+  sync_project
+  if ((DRY_RUN)); then
+    echo "DRY-RUN submit: ssh ${REMOTE_HOST} 'cd ${REMOTE_PROJECT_DIR} && bash .workflow/remote/submit_chain.sh'"
+    return 0
+  fi
+  local remote_q
+  remote_q="$(shell_quote "${REMOTE_PROJECT_DIR}")"
+  remote_exec "cd ${remote_q} && bash .workflow/remote/submit_chain.sh"
+}
+
+status_project() {
+  local remote_q
+  remote_q="$(shell_quote "${REMOTE_PROJECT_DIR}")"
+  remote_exec "cd ${remote_q} && {
+    echo '=== PBS queue ===';
+    $(shell_quote "${QSTAT_BIN}") -u \"\$(whoami)\" || true;
+    echo '=== status markers ===';
+    find outputs/status -maxdepth 1 -type f -print -exec sed -n '1,20p' {} \; 2>/dev/null || true;
+    echo '=== newest logs ===';
+    find outputs/logs -maxdepth 1 -type f -print0 2>/dev/null | xargs -0 ls -lt 2>/dev/null | head -n 10 || true;
+    echo '=== checkpoint ===';
+    ls -lh $(shell_quote "${CHECKPOINT_FILE}") 2>/dev/null || echo 'checkpoint not found';
+    echo '=== completion marker ===';
+    if test -f $(shell_quote "${DONE_FILE}"); then echo COMPLETE_MARKER_PRESENT; else echo INCOMPLETE; fi;
+    echo '=== result files ===';
+    find outputs/results outputs/reports results -type f -print 2>/dev/null | tail -n 30 || true;
+  }"
+}
+
+valid_relative_path() {
+  local path="$1"
+  [[ -n "${path}" && "${path}" != /* && "${path}" != ".." && "${path}" != ../* && "${path}" != */../* && "${path}" != */.. ]]
+}
+
+pull_results() {
+  local list_file rel remote_source found failures=0 rsync_args=(-azR --itemize-changes --out-format='%i %l %n%L')
+  list_file="${PROJECT_ROOT}/.workflow/important-results.txt"
+  [[ -f "${list_file}" ]] || die "Missing ${list_file}"
+  if ((DRY_RUN)); then
+    rsync_args+=(--dry-run)
+  fi
+
+  while IFS= read -r rel || [[ -n "${rel}" ]]; do
+    rel="${rel%$'\r'}"
+    [[ -z "${rel}" || "${rel}" == \#* ]] && continue
+    valid_relative_path "${rel}" || die "Unsafe path in important-results.txt: ${rel}"
+    found=0
+    if remote_exec "test -e $(shell_quote "${REMOTE_PROJECT_DIR}/${rel}")"; then
+      found=1
+    fi
+    if (( ! found )); then
+      echo "Skip missing remote path: ${rel}"
+      continue
+    fi
+    remote_source="${REMOTE_HOST}:${REMOTE_PROJECT_DIR}/./${rel}"
+    echo "Pull: ${rel}"
+    if ! rsync "${rsync_args[@]}" "${remote_source}" "${PROJECT_ROOT}/"; then
+      failures=$((failures + 1))
+    fi
+  done < "${list_file}"
+
+  (( failures == 0 )) || die "${failures} result path(s) failed to pull."
+}
+
+file_size() {
+  stat -f '%z' "$1" 2>/dev/null || stat -c '%s' "$1"
+}
+
+looks_secret() {
+  local rel="$1" base
+  base="$(basename "${rel}" | tr '[:upper:]' '[:lower:]')"
+  case "${base}" in
+    .env|.env.*|*.pem|*.key|credentials*.json|secrets.*|secret.*|token.txt|*access_token*|*access-token*|*api_token*|*api-token*)
+      [[ "${base}" == ".env.example" ]] && return 1
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+github_check() {
+  [[ -d "${PROJECT_ROOT}/.git" ]] || die "Not a Git repository: ${PROJECT_ROOT}"
+  local rel abs size failed=0
+  while IFS= read -r -d '' rel; do
+    abs="${PROJECT_ROOT}/${rel}"
+    [[ -f "${abs}" ]] || continue
+    size="$(file_size "${abs}")"
+    if (( size >= MAX_GITHUB_BYTES )); then
+      echo "BLOCK large (${size} bytes): ${rel}" >&2
+      failed=1
+    fi
+    if looks_secret "${rel}"; then
+      echo "BLOCK possible secret: ${rel}" >&2
+      failed=1
+    fi
+  done < <(git -C "${PROJECT_ROOT}" ls-files -co --exclude-standard -z)
+
+  if ((failed)); then
+    die "GitHub safety check failed. Keep blocked files ignored and untracked."
+  fi
+  echo "GitHub safety check passed: no candidate file reaches 99 MiB and no secret-like filename was found."
+}
+
+stage_one_file() {
+  local abs="$1" rel size
+  rel="${abs#${PROJECT_ROOT}/}"
+  git -C "${PROJECT_ROOT}" check-ignore -q -- "${rel}" && return 0
+  size="$(file_size "${abs}")"
+  if (( size >= MAX_GITHUB_BYTES )); then
+    echo "Skip large (${size} bytes): ${rel}" >&2
+    return 0
+  fi
+  if looks_secret "${rel}"; then
+    echo "Skip possible secret: ${rel}" >&2
+    return 0
+  fi
+  git -C "${PROJECT_ROOT}" add -- "${rel}"
+}
+
+github_stage() {
+  [[ -d "${PROJECT_ROOT}/.git" ]] || die "Not a Git repository: ${PROJECT_ROOT}"
+  local list_file rel abs file
+  list_file="${PROJECT_ROOT}/.workflow/github-include.txt"
+  [[ -f "${list_file}" ]] || die "Missing ${list_file}"
+
+  while IFS= read -r rel || [[ -n "${rel}" ]]; do
+    rel="${rel%$'\r'}"
+    [[ -z "${rel}" || "${rel}" == \#* ]] && continue
+    valid_relative_path "${rel}" || die "Unsafe path in github-include.txt: ${rel}"
+    abs="${PROJECT_ROOT}/${rel}"
+    [[ -e "${abs}" ]] || continue
+    if [[ -f "${abs}" ]]; then
+      stage_one_file "${abs}"
+    else
+      while IFS= read -r -d '' file; do
+        stage_one_file "${file}"
+      done < <(find "${abs}" -type f -print0)
+    fi
+  done < "${list_file}"
+
+  github_check
+  echo "Staged safe whitelist files. Review with: git -C $(shell_quote "${PROJECT_ROOT}") diff --cached --stat"
+}
+
+doctor() {
+  local failed=0 remote_q
+  for command_name in ssh rsync conda; do
+    if command -v "${command_name}" >/dev/null 2>&1; then
+      echo "OK local command: ${command_name}"
+    else
+      echo "MISSING local command: ${command_name}" >&2
+      failed=1
+    fi
+  done
+
+  if conda run -n "${LOCAL_CONDA_ENV}" python --version; then
+    echo "OK local conda env: ${LOCAL_CONDA_ENV}"
+  else
+    echo "MISSING local conda env: ${LOCAL_CONDA_ENV}" >&2
+    failed=1
+  fi
+
+  remote_q="$(shell_quote "${REMOTE_PROJECT_DIR}")"
+  local probe
+  probe="set -euo pipefail
+    if [[ -n $(shell_quote "${CONDA_SH}") ]]; then source $(shell_quote "${CONDA_SH}"); fi
+    command -v $(shell_quote "${QSUB_BIN}") >/dev/null
+    command -v $(shell_quote "${QSTAT_BIN}") >/dev/null
+    command -v $(shell_quote "${QDEL_BIN}") >/dev/null
+    command -v rsync >/dev/null
+    timeout --version | grep -q 'GNU coreutils'
+    conda run -n $(shell_quote "${REMOTE_CONDA_ENV}") python --version
+    $(shell_quote "${QSTAT_BIN}") -Q $(shell_quote "${PBS_QUEUE}")
+    echo REMOTE_PROJECT=${remote_q}"
+  if remote_exec "bash -c $(shell_quote "${probe}")"; then
+    echo "OK remote host/env/PBS queue: ${REMOTE_HOST} / ${REMOTE_CONDA_ENV} / ${PBS_QUEUE}"
+  else
+    echo "Remote doctor failed for ${REMOTE_HOST}." >&2
+    failed=1
+  fi
+  ((failed == 0)) || exit 1
+}
+
+command_name="${1:-}"
+[[ -n "${command_name}" ]] || { usage; exit 2; }
+shift
+
+case "${command_name}" in
+  -h|--help|help)
+    usage
+    ;;
+  init)
+    (($# == 1)) || die "init requires exactly one PROJECT_ROOT."
+    init_project "$1"
+    ;;
+  doctor|sync|submit|status|pull|github-check|github-stage)
+    parse_project_and_dry_run "$@"
+    load_project_config
+    case "${command_name}" in
+      doctor) ((DRY_RUN == 0)) || die "doctor does not accept --dry-run"; doctor ;;
+      sync) sync_project ;;
+      submit) submit_project ;;
+      status) ((DRY_RUN == 0)) || die "status does not accept --dry-run"; status_project ;;
+      pull) pull_results ;;
+      github-check) ((DRY_RUN == 0)) || die "github-check does not accept --dry-run"; github_check ;;
+      github-stage) ((DRY_RUN == 0)) || die "github-stage does not accept --dry-run"; github_stage ;;
+    esac
+    ;;
+  *)
+    usage
+    die "Unknown command: ${command_name}"
+    ;;
+esac

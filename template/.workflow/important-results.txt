@@ -1,0 +1,7 @@
+# Exact project-relative files/directories to pull from the remote host to the local machine.
+# Keep this list narrow when checkpoints or result folders are large.
+outputs/results
+outputs/checkpoints
+outputs/reports
+outputs/figures
+results

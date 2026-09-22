@@ -1,0 +1,4 @@
+interface:
+  display_name: "Remote Workflow PBS"
+  short_description: "Portable SSH/PBS research jobs and result retrieval"
+  default_prompt: "Use $remote-workflow-pbs to configure and check the remote PBS workflow for my project."
