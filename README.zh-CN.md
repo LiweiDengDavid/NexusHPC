@@ -71,7 +71,7 @@ cd NexusHPC
   RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/nexushpc"
   mkdir -p "$(dirname "$RW_SKILL_DIR")"
   mkdir "$RW_SKILL_DIR"
-  cp -R SKILL.md agents bin template README.md README.zh-CN.md "$RW_SKILL_DIR/"
+  cp -R SKILL.md agents bin template README.md README.zh-CN.md LICENSE "$RW_SKILL_DIR/"
 )
 ```
 
@@ -224,6 +224,7 @@ bash "$RW_PROJECT/scripts/remote-workflow" sync --dry-run
 NexusHPC/
 ├── README.md             英文文档
 ├── README.zh-CN.md       中文文档
+├── LICENSE              MIT 许可证
 ├── SKILL.md              Codex 加载的指令
 ├── agents/openai.yaml    Skill 展示信息
 ├── bin/remote-workflow   CLI 和项目初始化工具
@@ -241,4 +242,4 @@ NexusHPC/
 
 ## 许可证
 
-当前版本尚未声明许可证。
+本项目采用 [MIT 许可证](LICENSE)。

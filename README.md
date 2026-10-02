@@ -73,7 +73,7 @@ From the directory containing `SKILL.md`, `bin/`, and `template/`, run:
   RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/nexushpc"
   mkdir -p "$(dirname "$RW_SKILL_DIR")"
   mkdir "$RW_SKILL_DIR"
-  cp -R SKILL.md agents bin template README.md README.zh-CN.md "$RW_SKILL_DIR/"
+  cp -R SKILL.md agents bin template README.md README.zh-CN.md LICENSE "$RW_SKILL_DIR/"
 )
 ```
 
@@ -226,6 +226,7 @@ The 10 MiB rule is a skill instruction, not a CLI-enforced file-size cap. The Gi
 NexusHPC/
 ├── README.md             English documentation
 ├── README.zh-CN.md       Chinese documentation
+├── LICENSE              MIT License
 ├── SKILL.md              Instructions loaded by Codex
 ├── agents/openai.yaml    Skill display metadata
 ├── bin/remote-workflow   CLI and project initializer
@@ -243,4 +244,4 @@ When reporting an issue or proposing a change, include the command, expected/act
 
 ## License
 
-No license has been declared for this version yet.
+This project is licensed under the [MIT License](LICENSE).
