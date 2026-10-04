@@ -96,7 +96,11 @@ fi
 
 case "${status}" in
   0|124|137|143)
-    echo "Run is incomplete but resumable; the queued continuation will load the checkpoint."
+    if [[ -n "${next_job}" ]]; then
+      echo "Run is incomplete; queued continuation ${next_job} can resume from a valid checkpoint."
+    else
+      echo "Run is incomplete; no continuation is queued. Inspect logs and checkpoint before resubmitting."
+    fi
     exit "${status}"
     ;;
   *)

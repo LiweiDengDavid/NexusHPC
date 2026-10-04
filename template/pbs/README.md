@@ -2,7 +2,8 @@
 
 The default OpenPBS/PBS Professional chain lives in `.workflow/remote/job.sh` and `.workflow/remote/submit_chain.sh`. Configure queue, resources, walltime, conda environment, and executable paths in `.workflow/config.env` for your cluster; there is no built-in cluster-specific walltime ceiling.
 
-- Each job queues one `afterany` continuation before training starts, up to `MAX_CONTINUATIONS`.
+- One initial job runs smoke and validates it, then starts the full run in the same allocation. Use a project wrapper as `TRAIN_COMMAND`; stop on smoke/validation failure, keep smoke state separate, and `exec` the full entrypoint on success. A smoke-only request stops after validation.
+- `MAX_CONTINUATIONS=0` is the default for single-slice work. When explicitly enabled for longer full runs, each job queues one `afterany` continuation before training starts, up to that limit. Resume full training without repeating smoke already validated for the same code/configuration.
 - GNU `timeout` sends SIGTERM after `SLICE_SECONDS`, allowing `TERM_GRACE_SECONDS` to save an atomic checkpoint. Their sum must leave cleanup time before PBS walltime.
 - Training automatically resumes. It writes the configured `DONE_FILE` only after result validation; that file stops the chain.
 - On fatal non-resumable exits, the script attempts to cancel the dependent job with `qdel`. Cancellation is best-effort; inspect the queue and logs to verify the continuation stopped before resubmitting.

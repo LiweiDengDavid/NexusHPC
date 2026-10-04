@@ -149,7 +149,7 @@ bash "$RW_PROJECT/scripts/remote-workflow" sync --dry-run
 | `PBS_WALLTIME` | `01:00:00`，仅为示例，并非集群时间上限 |
 | `PBS_NGPUS`, `PBS_NCPUS`, `PBS_MEM` | `1`、`4`、`64gb`；根据实验和队列调整 |
 | `SLICE_SECONDS`, `TERM_GRACE_SECONDS` | `3000`、`300`；两者之和必须严格小于 walltime |
-| `MAX_CONTINUATIONS` | 初始作业之外，最多允许 `8` 个续跑作业 |
+| `MAX_CONTINUATIONS` | 默认 `0`；全量训练需要多个时间片时，显式设置有限的后续作业数 |
 | `QSUB_BIN`, `QSTAT_BIN`, `QDEL_BIN` | 可选的可执行文件路径；未设置时使用远程 `PATH` |
 | `CONDA_SH` | 可选的、可信的远程 conda 初始化脚本 |
 | `CHECKPOINT_FILE` | `outputs/checkpoints/resume_state.pt` |
@@ -174,6 +174,14 @@ bash "$RW_PROJECT/scripts/remote-workflow" sync --dry-run
 | `github-stage` | 暂存 `.workflow/github-include.txt` 中符合条件的文件 | 否 |
 
 **`submit` 会自行执行一次同步。** 其传输清单和删除操作需要与单独运行 `sync` 时一样仔细检查。GitHub 相关命令不会创建仓库、提交 commit 或推送。
+
+## 同一个 PBS 作业完成 smoke 和全量
+
+请求运行完整实验时，默认只提交一次初始 PBS 作业：先执行 smoke 并验证结果，通过后在同一次资源分配中立即运行全量任务，无需再次提交或申请批准。Smoke 或验证失败就退出；用户明确只要求 smoke 时，验证后停止。
+
+将 `TRAIN_COMMAND` 指向项目入口脚本，例如 `bash scripts/run/smoke_then_full.sh`。按实际命令编写脚本：先 smoke、再验证产物，最后用 `exec` 启动支持恢复的全量入口；前两步任一步失败都立即退出。Smoke 的输出和检查点单独保存，不覆盖全量状态，也不写全量的 `DONE_FILE`。不要直接将 `smoke && full` 写入 `TRAIN_COMMAND`，因为 PBS 执行器会在该值前加上 `exec`。
+
+按全量任务申请资源，时间预算覆盖两个阶段、验证及检查点清理宽限期。新项目默认 `MAX_CONTINUATIONS=0`，单时间片任务不会预排第二个作业。较长的全量训练显式启用有限的 `afterany` 续跑链，恢复同一个实验；只有代码和配置仍匹配时才跳过此前通过的 smoke。`init` 保留已有配置，提交前应检查原有续跑次数。如果要求总共只有一个作业，应先确认完整任务能在队列允许的一次资源分配中完成。
 
 ## 断点续训与完成判定
 
@@ -234,7 +242,7 @@ NexusHPC/
     └── src/remote_workflow/checkpoint.py
 ```
 
-离线验证已覆盖独立初始化、保留已有文件、独立项目绑定、目录移动、传输预览，以及通过模拟 PBS 验证成功/失败时的续跑行为。这不代表已验证对所有集群的兼容性；在昂贵实验之前，请先在自己的环境中运行一次小规模 PBS 冒烟测试。
+离线验证已覆盖独立初始化、保留已有文件、独立项目绑定、目录移动、传输预览，以及通过模拟 PBS 验证成功/失败时的续跑行为。这不代表已验证对所有集群的兼容性；应在同一个 PBS 作业中先验证小规模 smoke，再进入昂贵的全量阶段。
 
 安装 PyTorch 和 NumPy 后，可在本仓库目录运行 `python -B tests/test_checkpoint.py`，检查随机数状态恢复和检查点加载。该回归检查使用 CPU 和模拟的设备映射，不会运行 CUDA 作业。
 

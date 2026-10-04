@@ -151,7 +151,7 @@ All values belong in the project's `.workflow/config.env`. It is executable shel
 | `PBS_WALLTIME` | `01:00:00`, an example rather than a cluster limit |
 | `PBS_NGPUS`, `PBS_NCPUS`, `PBS_MEM` | `1`, `4`, `64gb`; adjust to your experiment and queue |
 | `SLICE_SECONDS`, `TERM_GRACE_SECONDS` | `3000`, `300`; their sum must be strictly below walltime |
-| `MAX_CONTINUATIONS` | `8` follow-up jobs at most, in addition to the initial job |
+| `MAX_CONTINUATIONS` | `0` by default; set a finite positive follow-up count when full training needs more than one slice |
 | `QSUB_BIN`, `QSTAT_BIN`, `QDEL_BIN` | Optional executable paths; otherwise use the remote `PATH` |
 | `CONDA_SH` | Optional trusted remote conda initialization script |
 | `CHECKPOINT_FILE` | `outputs/checkpoints/resume_state.pt` |
@@ -176,6 +176,14 @@ After initialization, run `bash /absolute/project/scripts/remote-workflow COMMAN
 | `github-stage` | Stage eligible files from `.workflow/github-include.txt` | No |
 
 **`submit` performs its own sync.** Its transfer list and deletion effects need the same review as a standalone sync. GitHub commands do not create a repository, commit, or push.
+
+## Smoke and full run in one allocation
+
+For a requested full experiment, submit one initial PBS job: run smoke and validate its results, then immediately start the full run in the same allocation without another submission or approval. Smoke/validation failure stops the job. An explicitly requested smoke-only run stops after validation.
+
+Set `TRAIN_COMMAND` to a project wrapper such as `bash scripts/run/smoke_then_full.sh`. Create it using your actual commands: run smoke, validate its outputs, then `exec` the resumable full entrypoint; fail immediately if either preliminary step fails. Keep smoke outputs/checkpoints separate and reserve `DONE_FILE` for the validated full run. Do not put `smoke && full` directly in `TRAIN_COMMAND`, because the PBS runner prefixes this value with `exec`.
+
+Budget resources for the full run and time for both stages plus validation/checkpoint cleanup. New projects default to `MAX_CONTINUATIONS=0`, so single-slice runs do not prequeue a second job. Explicitly enable a finite `afterany` chain for longer full runs; resume the same experiment, skipping passed smoke only for unchanged code/configuration. Existing configurations are preserved by `init`; review their continuation count before submitting. If you require exactly one job in total, ensure the complete run fits the queue's allocation limit first.
 
 ## Resumption and completion
 
@@ -236,7 +244,7 @@ NexusHPC/
     └── src/remote_workflow/checkpoint.py
 ```
 
-Offline validation has covered standalone initialization, preserving existing files, independent project bindings, directory moves, transfer previews, and mocked PBS success/failure continuations. This does not certify compatibility with every cluster; perform a small PBS smoke run in your environment before a costly experiment.
+Offline validation has covered standalone initialization, preserving existing files, independent project bindings, directory moves, transfer previews, and mocked PBS success/failure continuations. This does not certify compatibility with every cluster; validate a small smoke stage in the same PBS allocation before the costly full stage.
 
 With PyTorch and NumPy installed, run `python -B tests/test_checkpoint.py` from this repository to check RNG restoration and checkpoint loading. This regression uses CPU execution and simulated device mapping; it does not run a CUDA job.
 

@@ -21,4 +21,6 @@ The project script defaults to its own project root, even when invoked by absolu
 
 `submit` syncs again. Preview output includes per-file byte sizes; Agents must hand files >= 10 MiB to the user for transfer. CLI commands do not impose that size limit on human use. Set optional PBS executable paths and `CONDA_SH` if the non-interactive remote PATH lacks them.
 
+For a full experiment, submit once: point `TRAIN_COMMAND` at a project wrapper that runs smoke, validates it, then `exec`s the resumable full run in the same PBS allocation. Smoke/validation failure stops the wrapper. Keep smoke state separate; only the validated full run writes `DONE_FILE`. The default `MAX_CONTINUATIONS=0` avoids prequeued follow-up jobs for single-slice work; explicitly enable a finite chain for longer full runs. Do not place `smoke && full` directly in `TRAIN_COMMAND`.
+
 Keep local code authoritative. Run GPU/long work through OpenPBS/PBS Professional, integrate atomic checkpoint/resume and signal handling, and create `DONE_FILE` only after result validation. List required results in `.workflow/important-results.txt`; checkpoints often exceed the Agent transfer limit. See `AGENTS.md` and `pbs/README.md` for the job contract.
