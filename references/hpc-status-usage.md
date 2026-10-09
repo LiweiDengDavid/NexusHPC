@@ -1,19 +1,33 @@
 # hpc-status：安装与使用
 
-`remote-workflow-cetus` 的“统一任务状态展示”要求在提交或维护任务时登记身份、PBS ID、角色、关系和成果路径；它并不会仅凭安装 skill 自动登记所有实验。本仓库提供仪表盘程序和约定，提交入口仍须实际写入兼容的登记记录。
+`nexushpc` 的“统一任务状态展示”要求在提交或维护任务时登记身份、PBS ID、角色、关系和成果路径；它并不会仅凭安装 skill 自动登记所有实验。本仓库提供仪表盘程序和约定，提交入口仍须实际写入兼容的登记记录。
 
-## 本机已有入口
+## 独立看板（推荐）
 
-已有 collection 入口从任意目录运行即可，无需切换当前目录：
+所有采集与显示代码由 skill 提供，catalogue 目录只保存配置、任务定义和本地显示记录，不需要项目内安装或远端部署看板代码。
 
 ```bash
-/path/to/Code/hpc-status
-/path/to/Code/hpc-status --details
-/path/to/Code/hpc-status --json
-/path/to/Code/hpc-status --no-color
+bash /absolute/path/to/NexusHPC/hpc-status --standalone /absolute/path/to/catalogue
+bash /absolute/path/to/NexusHPC/hpc-status --standalone /absolute/path/to/catalogue --details
+bash /absolute/path/to/NexusHPC/hpc-status --standalone /absolute/path/to/catalogue --json
 ```
 
-入口负责转发参数。实际代码是 catalogue 项目里的 `scripts/hpc-status`、`scripts/render_hpc_status.py` 和 `.workflow/remote/task_status.py`。本仓库将这三份依赖放在 `template/` 中；仓库根目录的 `hpc-status` 改为可配置的 collection 入口，便于其他用户复用。
+catalogue 目录可以是 skill 本身，也可以是一个独立设置目录。准备 `.workflow/config.env` 和 `configs/hpc_tasks.json`，后者沿用现有任务定义，或用 `[]` 开始。配置示例（先替换为已确认的实际绑定）：
+
+```bash
+REMOTE_HOST="confirmed-ssh-alias"
+LOCAL_CONDA_ENV="python312"
+HPC_STATUS_REMOTE_PYTHON="/usr/bin/python3"
+HPC_DASH_PRIMARY_ROOT="/confirmed/remote/project"
+QSTAT_BIN="/opt/pbs/bin/qstat"
+QSELECT_BIN="/opt/pbs/bin/qselect"
+```
+
+`root_key: PROJECT` 使用 `HPC_DASH_PRIMARY_ROOT`；也支持从既有 `REMOTE_BASE_DIR/PROJECT_SLUG` 推导。其他项目根目录保持在本地配置中。被监控项目的远端 receipt、日志和成果仍留在实验目录，查询不会修改它们。
+
+`scripts/query_hpc_status.py` 检查源文件及完整载荷小于 10 MiB 后，通过 SSH stdin 发送通用 collector 和本地 catalogue/config。远端 Python 在内存中执行，仅返回查询结果，不安装文件。远端失败不会更新本地显示记录。PBS 命令路径由配置决定。原有项目模式继续可用，见下文。
+
+在 skill 目录存放个人设置时，`.workflow/config.env`、`configs/hpc_tasks.json` 和 `outputs/` 已被 Git 忽略；不要强制暂存这些文件，也不要把它们打进分享包。
 
 ## 新项目安装
 
@@ -95,6 +109,8 @@ bash /absolute/path/to/NexusHPC/hpc-status --json
 ## 当前适配范围
 
 这份 collector 来自 CETUS dashboard，支持 GPU 主任务、已登记的续跑/relay 和独立 CPU watcher；还保留 MicroLens 和 LMWeather 的进度适配。MicroLens `dimension` 或 ASR 完成验证须设置实际 `target_count`；没有将某个用户的数据量固定在模板中。
+
+支持 `job_reference: {"path": "existing/state.json", "keys": ["evaluation", "job_id"]}` 从既有记录读取当前完整作业 ID，并核对工作目录。`current_run_only: true` 防止旧完成标记覆盖活动作业。TimeFFM 新领域 CSV 适配可用 `artifact_validation: timeffm_newdomains_metrics`，并配置 `failure_marker`，检查 56 个预期指标及非负有限数值。
 
 通用任务的内置完成检查是 marker 和 artifact 文件存在。artifact 内容/新旧 run 的严格验证、CPU 训练任务、以及其他 scheduler/receipt 格式需要项目适配；此模板尚不自动实现状态契约中的所有验证要求。新 run 必须使用相符的成果/marker 路径，避免旧标记误报完成。PBS 提交器目前不会自动生成这份 catalogue 的完整 receipt。
 

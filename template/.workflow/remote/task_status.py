@@ -1,6 +1,8 @@
 """Read-only, one-row-per-task PBS view; compatible with CETUS Python 3.6."""
 import argparse
+import csv
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -9,12 +11,12 @@ import subprocess
 import time
 import unicodedata
 
-PROJECT = Path(__file__).resolve().parents[2]
-
+PROJECT = (Path(REMOTE_INPUT['settings']['HPC_DASH_PRIMARY_ROOT'])
+           if 'REMOTE_INPUT' in globals() else Path(__file__).resolve().parents[2])
 
 
 def command(*args):
-    settings = config_values(PROJECT / '.workflow/config.env')
+    settings = REMOTE_INPUT['settings'] if 'REMOTE_INPUT' in globals() else config_values(PROJECT / '.workflow/config.env')
     executable = settings.get(args[0].upper() + '_BIN') or args[0]
     p = subprocess.run([executable] + list(args[1:]), universal_newlines=True,
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -35,16 +37,36 @@ def config_values(path):
 
 
 def catalogue():
-    settings = config_values(PROJECT / '.workflow/config.env')
-    tasks = json.loads((PROJECT / 'configs/hpc_tasks.json').read_text())
+    if 'REMOTE_INPUT' in globals():
+        settings = REMOTE_INPUT['settings']
+        tasks = REMOTE_INPUT['tasks']
+    else:
+        settings = config_values(PROJECT / '.workflow/config.env')
+        tasks = json.loads((PROJECT / 'configs/hpc_tasks.json').read_text())
     for t in tasks:
-        t['root'] = str(PROJECT) if t['root_key'] == 'PROJECT' else settings[t['root_key']]
+        t['root'] = settings.get('HPC_DASH_PRIMARY_ROOT', str(PROJECT)) if t['root_key'] == 'PROJECT' else settings[t['root_key']]
     return tasks
+
+
+def referenced_job_id(task):
+    reference = task.get('job_reference')
+    if not reference:
+        return None
+    try:
+        value = json.loads((Path(task['root']) / reference['path']).read_text())
+        for key in reference['keys']:
+            value = value[key]
+        return value if isinstance(value, str) else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def matches(task, job):
     text = job.get('Submit_arguments', '') + ' ' + job.get('Variable_List', {}).get('PBS_O_WORKDIR', '')
     env = job.get('Variable_List', {})
+    reference_id = referenced_job_id(task)
+    if reference_id and reference_id == job.get('_id') and env.get('PBS_O_WORKDIR', '').rstrip('/') == task['root'].rstrip('/'):
+        return True
     if task.get('task_id'):
         if env.get('HPC_TASK_ID') == task['task_id']:
             return env.get('PBS_O_WORKDIR', '').rstrip('/') == task['root'].rstrip('/')
@@ -90,6 +112,8 @@ def latest_log(task, gpu_jobs):
     if task.get('current_log_only'):
         # Match the actual allocation, never an earlier attempt's failure log.
         numbers = [i.split('.')[0] for i, _ in gpu_jobs]
+        if not numbers and referenced_job_id(task):
+            numbers = [referenced_job_id(task).split('.')[0]]
         candidates = [p for p in candidates if any(re.search(r'(?<!\d)' + re.escape(n) + r'(?!\d)', p.name) for n in numbers)]
         for _, job in gpu_jobs:
             output = job.get('Output_Path', '').partition(':')[2]
@@ -149,6 +173,21 @@ def completion(task):
     artifact = task.get('artifact')
     if not marker or not (root / marker).is_file() or not artifact or not (root / artifact).is_file():
         return False
+    if task.get('artifact_validation') == 'timeffm_newdomains_metrics':
+        try:
+            failed = root / task['failure_marker']
+            if failed.is_file() and failed.stat().st_mtime_ns >= (root / marker).stat().st_mtime_ns:
+                return False
+            with (root / artifact).open(newline='') as stream:
+                rows = list(csv.DictReader(stream))
+            expected = {(source, target, horizon)
+                        for source in ('ETTh1', 'ETTh2', 'ETTm1', 'ETTm2', 'Weather', 'Electricity', 'Exchange')
+                        for target in ('solar', 'traffic') for horizon in (96, 192, 336, 720)}
+            observed = {(r['source'], r['target'], int(r['eval_horizon'])) for r in rows}
+            return observed == expected and len(rows) == len(expected) and all(
+                math.isfinite(float(r[k])) and float(r[k]) >= 0 for r in rows for k in ('mse', 'mae'))
+        except (OSError, ValueError, KeyError, TypeError, csv.Error):
+            return False
     if task.get('dimension') or task.get('task_id') == 'microlens50k_asr':
         try:
             r = json.loads((root / artifact).read_text())
@@ -219,7 +258,7 @@ def build_rows(tasks, jobs):
                         error = ' '.join(reason.split())[:140]
                 except (ValueError, OSError):
                     pass
-        if completion(task):
+        if completion(task) and not (task.get('current_run_only') and selected):
             state = '已完成'
         elif active:
             state = '运行'
@@ -251,6 +290,13 @@ def build_rows(tasks, jobs):
                                        ('GPU 主任务' if j['job_state'] != 'H' else '旧 GPU 续跑')} for i, j in gpu] +
                              [{'id': i, 'state': j['job_state'], 'queue': j['queue'], 'role': 'CPU 调度/兼容停放'} for i, j in controls]})
     for row, task in zip(rows, tasks):
+        reference_id = referenced_job_id(task)
+        if reference_id:
+            row['receipt_jobs'] = [{'id': reference_id, 'role': '评估主任务',
+                                    'parent_job_id': None, 'log': row['log']}]
+        if task.get('task_id'):
+            row['task_id'] = task['task_id']
+            row['run_id'] = task.get('run_id')
         if task.get('receipt'):
             try:
                 receipt = json.loads((Path(task['root']) / task['receipt']).read_text())
@@ -356,7 +402,7 @@ def render_cards(rows, color=False, details=False):
                     if r.get(key):
                         lines.append('    ' + title + ': ' + r[key])
             lines.append('')
-    lines.append(paint('详情：./hpc-status --details', '2'))
+    lines.append(paint('详情：hpc-status --details', '2'))
     return '\n'.join(lines)
 
 

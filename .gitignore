@@ -10,3 +10,7 @@ outputs/
 !.env.example
 *.pem
 *.key
+
+# Local standalone dashboard bindings and catalogue
+/.workflow/config.env
+/configs/hpc_tasks.json

@@ -73,7 +73,7 @@ From the directory containing `SKILL.md`, `bin/`, and `template/`, run:
   RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/nexushpc"
   mkdir -p "$(dirname "$RW_SKILL_DIR")"
   mkdir "$RW_SKILL_DIR"
-  cp -R SKILL.md agents bin template references hpc-status README.md README.zh-CN.md LICENSE "$RW_SKILL_DIR/"
+  cp -R SKILL.md agents bin scripts template references hpc-status README.md README.zh-CN.md LICENSE "$RW_SKILL_DIR/"
 )
 ```
 
@@ -257,3 +257,11 @@ This project is licensed under the [MIT License](LICENSE).
 ## HPC status dashboard
 
 See [installation and usage](references/hpc-status-usage.md) for the collection launcher, task registration, all three views, and 24-hour completed-task dismissal.
+
+### Independent dashboard / 独立看板
+
+```bash
+bash /absolute/path/to/NexusHPC/hpc-status --standalone /absolute/path/to/catalogue --details
+```
+
+The skill provides all collector/display code; the catalogue directory supplies only `.workflow/config.env`, `configs/hpc_tasks.json`, and local display records. The collector runs through SSH stdin without remote deployment. See [setup](references/hpc-status-usage.md).

@@ -14,7 +14,7 @@ import tempfile
 import time
 
 PROJECT = Path(__file__).resolve().parents[1]
-STATE_FILE = PROJECT / 'outputs/status/hpc_status_visibility.json'
+STATE_FILE = Path(os.environ.get('HPC_STATUS_STATE_ROOT', str(PROJECT))) / 'outputs/status/hpc_status_visibility.json'
 RETENTION_SECONDS = 24 * 60 * 60
 
 

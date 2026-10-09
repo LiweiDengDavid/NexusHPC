@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Independent mode uses the skill collector; legacy project forwarding remains compatible.
+skill_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${1:-}" == --standalone ]]; then
+    shift
+    catalogue_dir="${1:?Usage: hpc-status --standalone CATALOGUE_DIR [--details|--json]}"
+    shift
+    catalogue_dir="$(cd -- "${catalogue_dir}" && pwd)"
+    source "${catalogue_dir}/.workflow/config.env"
+    if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != dumb ]]; then
+        set -- --color "$@"
+    fi
+    exec conda run --no-capture-output -n "${LOCAL_CONDA_ENV:-python312}" python -B \
+        "${skill_dir}/scripts/query_hpc_status.py" "${catalogue_dir}" "$@"
+fi
 # Collection launcher: point at the project hosting the task catalogue.
 project_dir="${HPC_STATUS_PROJECT:-}"
 if [[ -z "${project_dir}" ]]; then

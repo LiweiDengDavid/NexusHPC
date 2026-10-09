@@ -71,7 +71,7 @@ cd NexusHPC
   RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/nexushpc"
   mkdir -p "$(dirname "$RW_SKILL_DIR")"
   mkdir "$RW_SKILL_DIR"
-  cp -R SKILL.md agents bin template references hpc-status README.md README.zh-CN.md LICENSE "$RW_SKILL_DIR/"
+  cp -R SKILL.md agents bin scripts template references hpc-status README.md README.zh-CN.md LICENSE "$RW_SKILL_DIR/"
 )
 ```
 
@@ -255,3 +255,11 @@ NexusHPC/
 ## HPC status dashboard
 
 现已包含 `hpc-status` 入口及项目模板。参见[安装与使用说明](references/hpc-status-usage.md)：任务登记、默认/详细/JSON 视图，以及首次查看完成后 24 小时自动隐藏。
+
+### Independent dashboard / 独立看板
+
+```bash
+bash /absolute/path/to/NexusHPC/hpc-status --standalone /absolute/path/to/catalogue --details
+```
+
+The skill provides all collector/display code; the catalogue directory supplies only `.workflow/config.env`, `configs/hpc_tasks.json`, and local display records. The collector runs through SSH stdin without remote deployment. See [setup](references/hpc-status-usage.md).
