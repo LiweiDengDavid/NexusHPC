@@ -73,7 +73,7 @@ From the directory containing `SKILL.md`, `bin/`, and `template/`, run:
   RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/nexushpc"
   mkdir -p "$(dirname "$RW_SKILL_DIR")"
   mkdir "$RW_SKILL_DIR"
-  cp -R SKILL.md agents bin template README.md README.zh-CN.md LICENSE "$RW_SKILL_DIR/"
+  cp -R SKILL.md agents bin template references hpc-status README.md README.zh-CN.md LICENSE "$RW_SKILL_DIR/"
 )
 ```
 
@@ -253,3 +253,7 @@ When reporting an issue or proposing a change, include the command, expected/act
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+
+## HPC status dashboard
+
+See [installation and usage](references/hpc-status-usage.md) for the collection launcher, task registration, all three views, and 24-hour completed-task dismissal.

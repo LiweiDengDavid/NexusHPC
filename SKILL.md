@@ -56,3 +56,9 @@ Use `outputs/checkpoints/`, `outputs/logs/`, and `outputs/results/` or `outputs/
 If the job is queued/waiting or expected to exceed five minutes, hand monitoring to the user; do not keep polling. Include the actual job ID, resolved remote project directory, training log (`outputs/logs/train.<numeric-job-id>.cont0.log` for the initial job), PBS spool directory, checkpoint/result paths, and `DONE_FILE`.
 
 Provide resolved, copy-pasteable SSH commands for the configured `qstat` executable and job ID, `tail -n 80` / `tail -f` on the log, `ls -lh` / `find` on checkpoints/results, and `test -f` on the completion marker. Explain: queue state and advancing logs indicate running; fatal logs / `TRAINING_FAILED` indicate failure; a timeout with saved checkpoint and a queued dependent job indicates continuation; the marker plus validated expected results proves completion. Report a missing/unvalidated marker as incomplete.
+
+## Unified task status
+
+When submitting or maintaining main jobs, continuations, CPU relays/watchers, or diagnosing missing tasks in `hpc-status`, read [the unified status contract](references/hpc-status.md). Register stable task identity, job roles/relationships and artifact paths in existing project records; update IDs after submission/replacement and check default, `--details`, and `--json` consistency. Count CPU controllers separately from computing tasks. Status queries remain read-only. Keep actual project roots and live IDs out of the reusable skill; essential requirements also ship in the project template. Documentation alone does not implement or deploy an adapter.
+
+The bundled `hpc-status` launcher and `template/scripts/hpc-status` implement a snapshot dashboard; read [setup and adapter limitations](references/hpc-status-usage.md) before installing it. Project entrypoints must still write task receipts; `init` does not automatically register an experiment.

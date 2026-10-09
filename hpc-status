@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Collection launcher: point at the project hosting the task catalogue.
+project_dir="${HPC_STATUS_PROJECT:-}"
+if [[ -z "${project_dir}" ]]; then
+    if [[ $# -eq 0 || "$1" == --* ]]; then
+        echo 'Usage: hpc-status PROJECT_ROOT [--details|--json|--no-color]' >&2
+        echo 'Alternatively set HPC_STATUS_PROJECT to the catalogue project.' >&2
+        exit 2
+    fi
+    project_dir="$1"
+    shift
+fi
+exec bash "${project_dir}/scripts/hpc-status" "$@"

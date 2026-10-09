@@ -71,7 +71,7 @@ cd NexusHPC
   RW_SKILL_DIR="${CODEX_HOME:-$HOME/.codex}/skills/nexushpc"
   mkdir -p "$(dirname "$RW_SKILL_DIR")"
   mkdir "$RW_SKILL_DIR"
-  cp -R SKILL.md agents bin template README.md README.zh-CN.md LICENSE "$RW_SKILL_DIR/"
+  cp -R SKILL.md agents bin template references hpc-status README.md README.zh-CN.md LICENSE "$RW_SKILL_DIR/"
 )
 ```
 
@@ -251,3 +251,7 @@ NexusHPC/
 ## 许可证
 
 本项目采用 [MIT 许可证](LICENSE)。
+
+## HPC status dashboard
+
+现已包含 `hpc-status` 入口及项目模板。参见[安装与使用说明](references/hpc-status-usage.md)：任务登记、默认/详细/JSON 视图，以及首次查看完成后 24 小时自动隐藏。
