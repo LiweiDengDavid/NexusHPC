@@ -11,6 +11,7 @@ usage() {
   cat <<'EOF'
 Usage:
   remote-workflow init PROJECT_ROOT
+  remote-workflow upgrade PROJECT_ROOT [--dry-run]
   remote-workflow doctor PROJECT_ROOT
   remote-workflow sync PROJECT_ROOT [--dry-run]
   remote-workflow submit PROJECT_ROOT [--dry-run]
@@ -57,7 +58,7 @@ parse_project_and_dry_run() {
 }
 
 load_project_config() {
-  case "${command_name}" in github-check|github-stage) return 0 ;; esac
+  case "${command_name}" in github-check|github-stage|upgrade) return 0 ;; esac
   local config="${PROJECT_ROOT}/.workflow/config.env"
   [[ -f "${config}" ]] || die "Missing ${config}; run 'remote-workflow init ${PROJECT_ROOT}' first."
   # shellcheck source=/dev/null
@@ -167,6 +168,43 @@ EOF
   fi
 }
 
+upgrade_project() {
+  [[ -d "${TEMPLATE_ROOT}" ]] || die "upgrade needs the full skill package; use its bin/remote-workflow."
+  [[ -f "${PROJECT_ROOT}/.workflow/config.env" ]] || die "Project is not initialized. Use init first."
+  local rel source backup="${PROJECT_ROOT}/.workflow/backups/$(date -u +%Y%m%dT%H%M%SZ).$$"
+  for rel in scripts/remote-workflow scripts/hpc-status scripts/render_hpc_status.py \
+      .workflow/remote/common.sh .workflow/remote/job.sh .workflow/remote/submit_chain.sh \
+      .workflow/remote/task_registry.py .workflow/remote/task_status.py \
+      .workflow/remote/qsub_register.py .workflow/remote/hpc-qsub .workflow/remote/auto_register.sh; do
+    source="${TEMPLATE_ROOT}/${rel}"
+    [[ "${rel}" != scripts/remote-workflow ]] || source="${TOOLKIT_ROOT}/bin/remote-workflow"
+    if [[ -f "${PROJECT_ROOT}/${rel}" ]] && cmp -s "${source}" "${PROJECT_ROOT}/${rel}"; then
+      continue
+    fi
+    echo "Upgrade: ${rel}"
+    (( DRY_RUN == 0 )) || continue
+    if [[ -e "${PROJECT_ROOT}/${rel}" ]]; then
+      mkdir -p "${backup}/$(dirname "${rel}")"
+      cp -p "${PROJECT_ROOT}/${rel}" "${backup}/${rel}"
+    fi
+    mkdir -p "${PROJECT_ROOT}/$(dirname "${rel}")"
+    cp -p "${source}" "${PROJECT_ROOT}/${rel}"
+  done
+  local excludes="${PROJECT_ROOT}/.workflow/sync-exclude.txt"
+  if [[ -f "${excludes}" ]] && ! grep -Fxq '/.workflow/backups/' "${excludes}"; then
+    echo "Protect workflow backups from sync"
+    if (( DRY_RUN == 0 )); then
+      mkdir -p "${backup}/.workflow"
+      cp -p "${excludes}" "${backup}/.workflow/sync-exclude.txt"
+      printf '\n/.workflow/backups/\n' >> "${excludes}"
+    fi
+  fi
+  if (( DRY_RUN == 0 )); then
+    echo "Workflow upgraded locally. Previous scripts, when changed: ${backup}"
+    echo "Configuration, task catalogue and outputs preserved. Review custom launchers against the backup before syncing."
+  fi
+}
+
 sync_project() {
   local exclude_file remote_q mkdir_cmd rsync_args
   exclude_file="${PROJECT_ROOT}/.workflow/sync-exclude.txt"
@@ -203,6 +241,16 @@ submit_project() {
   fi
   local remote_q
   remote_q="$(shell_quote "${REMOTE_PROJECT_DIR}")"
+  # One local reference per project, not one central entry per experiment.
+  # It stores only the config path; dashboard bindings are resolved from that
+  # project's current config and filtered by SSH host at query time.
+  local registry="${PROJECT_ROOT}/.workflow/remote/task_registry.py"
+  if [[ -f "${TEMPLATE_ROOT}/.workflow/remote/task_registry.py" ]]; then
+    registry="${TEMPLATE_ROOT}/.workflow/remote/task_registry.py"
+  fi
+  [[ -f "${registry}" ]] || die "Automatic task registration is missing; upgrade this project's workflow before submitting."
+  conda run --no-capture-output -n "${LOCAL_CONDA_ENV}" python -B \
+    "${registry}" link-project "${PROJECT_ROOT}"
   remote_exec "cd ${remote_q} && bash .workflow/remote/submit_chain.sh"
 }
 
@@ -391,11 +439,12 @@ case "${command_name}" in
     (($# == 1)) || die "init requires exactly one PROJECT_ROOT."
     init_project "$1"
     ;;
-  doctor|sync|submit|status|pull|github-check|github-stage)
+  doctor|sync|submit|status|pull|github-check|github-stage|upgrade)
     parse_project_and_dry_run "$@"
     load_project_config
     case "${command_name}" in
       doctor) ((DRY_RUN == 0)) || die "doctor does not accept --dry-run"; doctor ;;
+      upgrade) upgrade_project ;;
       sync) sync_project ;;
       submit) submit_project ;;
       status) ((DRY_RUN == 0)) || die "status does not accept --dry-run"; status_project ;;

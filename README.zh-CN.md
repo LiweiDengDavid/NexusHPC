@@ -254,6 +254,8 @@ NexusHPC/
 
 ## HPC status dashboard
 
+添加 `--manage` 可打开选择菜单：方向键移动、空格勾选、回车隐藏；Tab 切换到恢复列表，q/Esc 取消。只更改本机面板显示，自动完成后 24 小时隐藏规则保持有效。
+
 现已包含 `hpc-status` 入口及项目模板。参见[安装与使用说明](references/hpc-status-usage.md)：任务登记、默认/详细/JSON 视图，以及首次查看完成后 24 小时自动隐藏。
 
 ### Independent dashboard / 独立看板
@@ -262,4 +264,4 @@ NexusHPC/
 bash /absolute/path/to/NexusHPC/hpc-status --standalone /absolute/path/to/catalogue --details
 ```
 
-The skill provides all collector/display code; the catalogue directory supplies only `.workflow/config.env`, `configs/hpc_tasks.json`, and local display records. The collector runs through SSH stdin without remote deployment. See [setup](references/hpc-status-usage.md).
+通过新版工作流提交时，实验会自动登记到各自项目并出现在全局看板，续跑沿用同一实验记录，**不用逐个修改 `hpc_tasks.json`**。该文件仅保留旧任务/特殊适配定义，也可省略。看板只需 `.workflow/config.env`，采集代码通过 SSH stdin 执行，无需远端安装看板。默认隐藏超过 24 小时的完成任务，添加 `--history` 可查看历史。旧项目可从完整仓库使用 `bash bin/remote-workflow upgrade 项目目录 --dry-run` 预览，再去掉 `--dry-run` 升级；被替换的脚本会备份，配置和成果保留。详见[使用说明](references/hpc-status-usage.md)。

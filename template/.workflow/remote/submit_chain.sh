@@ -15,8 +15,12 @@ if is_complete; then
   exit 0
 fi
 
+HPC_ATTEMPT_DIR="$("${HPC_STATUS_REMOTE_PYTHON}" -B "${TASK_REGISTRY}" prepare "${PROJECT_ROOT}")"
+export HPC_ATTEMPT_DIR
+source "${PROJECT_ROOT}/${HPC_ATTEMPT_DIR}/identity.env"
 job_id="$(submit_one 0)"
 echo "Submitted initial PBS job: ${job_id}"
+echo "Registered run: ${HPC_RUN_ID} (${PROJECT_ROOT}/outputs/runs/${HPC_RUN_ID})"
 echo "Remote project: ${PROJECT_ROOT}"
 echo "Completion marker: ${PROJECT_ROOT}/${DONE_FILE}"
 echo "Monitor with qstat, outputs/logs, ${CHECKPOINT_FILE}, and result artifacts."

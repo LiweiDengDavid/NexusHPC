@@ -18,6 +18,7 @@ echo "Checkpoint: ${PROJECT_ROOT}/${CHECKPOINT_FILE}"
 echo "Done marker: ${PROJECT_ROOT}/${DONE_FILE}"
 
 if is_complete; then
+  "${HPC_STATUS_REMOTE_PYTHON}" -B "${TASK_REGISTRY}" complete "${PROJECT_ROOT}" --attempt "${HPC_ATTEMPT_DIR}" || exit 1
   echo "Completion marker already exists; no work required."
   exit 0
 fi
@@ -28,6 +29,8 @@ cleanup_on_exit() {
   case "${status}" in
     0|124|137|143) return 0 ;;
   esac
+  "${HPC_STATUS_REMOTE_PYTHON}" -B "${TASK_REGISTRY}" fail "${PROJECT_ROOT}" \
+    --attempt "${HPC_ATTEMPT_DIR}" --exit-status "${status}" || echo "WARNING: could not record job failure" >&2
   if [[ -n "${next_job}" ]] && ! is_complete; then
     echo "Setup/runtime failure; removing continuation ${next_job}." >&2
     "${QDEL_BIN}" "${next_job}" 2>/dev/null || true
@@ -86,6 +89,7 @@ set -e
 echo "Training command exit status: ${status}"
 
 if is_complete; then
+  "${HPC_STATUS_REMOTE_PYTHON}" -B "${TASK_REGISTRY}" complete "${PROJECT_ROOT}" --attempt "${HPC_ATTEMPT_DIR}" || exit 1
   echo "Completion marker verified. Training is complete."
   if [[ -n "${next_job}" ]]; then
     "${QDEL_BIN}" "${next_job}" 2>/dev/null || true

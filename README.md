@@ -256,6 +256,8 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## HPC status dashboard
 
+Use `--manage` for an interactive selector: arrows move, Space selects, Enter hides, Tab switches to restore, and q/Esc cancels. Only local display records change; the automatic 24-hour completion rule remains available.
+
 See [installation and usage](references/hpc-status-usage.md) for the collection launcher, task registration, all three views, and 24-hour completed-task dismissal.
 
 ### Independent dashboard / 独立看板
@@ -264,4 +266,4 @@ See [installation and usage](references/hpc-status-usage.md) for the collection 
 bash /absolute/path/to/NexusHPC/hpc-status --standalone /absolute/path/to/catalogue --details
 ```
 
-The skill provides all collector/display code; the catalogue directory supplies only `.workflow/config.env`, `configs/hpc_tasks.json`, and local display records. The collector runs through SSH stdin without remote deployment. See [setup](references/hpc-status-usage.md).
+The skill provides all collector/display code; the catalogue directory supplies `.workflow/config.env` and optional legacy `configs/hpc_tasks.json`. Workflow submissions automatically save per-run records and link the project's config for the global dashboard; no per-experiment JSON edits are needed. Continuations share the run identity. Add `--history` to include completed tasks hidden after 24 hours. Existing projects can preview/apply `bash bin/remote-workflow upgrade PROJECT [--dry-run]`; changed scripts are backed up and configuration/results are preserved. The collector runs through SSH stdin without remote deployment. See [setup](references/hpc-status-usage.md).

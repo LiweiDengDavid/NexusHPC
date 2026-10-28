@@ -4,10 +4,24 @@ set -euo pipefail
 
 PROJECT_ROOT="${PBS_O_WORKDIR:-$(pwd)}"
 CONFIG_FILE="${PROJECT_ROOT}/.workflow/config.env"
+# Continuations use the configuration captured when this attempt was submitted.
+if [[ -n "${HPC_ATTEMPT_DIR:-}" ]]; then
+  [[ "${HPC_ATTEMPT_DIR}" == outputs/runs/*/attempts/* && "${HPC_ATTEMPT_DIR}" != *..* ]] || { echo "Invalid HPC_ATTEMPT_DIR" >&2; exit 2; }
+  CONFIG_FILE="${PROJECT_ROOT}/${HPC_ATTEMPT_DIR}/config.env"
+fi
 
 [[ -f "${CONFIG_FILE}" ]] || { echo "Missing ${CONFIG_FILE}" >&2; exit 2; }
 # shellcheck source=/dev/null
 source "${CONFIG_FILE}"
+if [[ -n "${HPC_ATTEMPT_DIR:-}" ]]; then
+  source "${PROJECT_ROOT}/${HPC_ATTEMPT_DIR}/identity.env"
+fi
+
+HPC_STATUS_REMOTE_PYTHON="${HPC_STATUS_REMOTE_PYTHON:-/usr/bin/python3}"
+export PROJECT_SLUG="${PROJECT_SLUG:-}" HPC_TASK_ID="${HPC_TASK_ID:-}" HPC_RUN_ID="${HPC_RUN_ID:-}"
+export HPC_TASK_LABEL="${HPC_TASK_LABEL:-}" ARTIFACT_FILE="${ARTIFACT_FILE:-}"
+export TRAIN_COMMAND CHECKPOINT_FILE DONE_FILE PBS_NGPUS PBS_NCPUS PBS_MEM PBS_WALLTIME PBS_QUEUE
+TASK_REGISTRY="${PROJECT_ROOT}/.workflow/remote/task_registry.py"
 
 : "${PBS_QUEUE:?PBS_QUEUE is required}"
 : "${PBS_WALLTIME:?PBS_WALLTIME is required}"
@@ -61,7 +75,8 @@ submit_one() {
     set -- -W "depend=${dependency}"
   fi
 
-  "${QSUB_BIN}" \
+  local job_id
+  job_id="$("${QSUB_BIN}" \
     -N "${name}" \
     -q "${PBS_QUEUE}" \
     -l "select=1:ngpus=${PBS_NGPUS}:ncpus=${PBS_NCPUS}:mem=${PBS_MEM}" \
@@ -69,7 +84,18 @@ submit_one() {
     -j oe \
     -o "${SPOOL_DIR}/" \
     -m n \
-    -v "CONTINUATION_GENERATION=${generation}" \
+    -v "CONTINUATION_GENERATION=${generation},HPC_TASK_ID=${HPC_TASK_ID},HPC_RUN_ID=${HPC_RUN_ID},HPC_ATTEMPT_DIR=${HPC_ATTEMPT_DIR},HPC_JOB_ROLE=$([[ ${generation} == 0 ]] && echo main || echo continuation)" \
     "$@" \
-    "${JOB_SCRIPT}"
+    "${JOB_SCRIPT}")" || return $?
+
+  # Preserve successful qsub output before attempting JSON registration. A failed
+  # registration must never trigger another qsub or cancel an accepted job.
+  if ! printf '%s\n' "${job_id}" > "${PROJECT_ROOT}/${HPC_ATTEMPT_DIR}/job.${generation}.id"; then
+    echo "WARNING: PBS accepted ${job_id}, but its recovery receipt could not be saved. Do not resubmit." >&2
+  fi
+  if ! "${HPC_STATUS_REMOTE_PYTHON}" -B "${TASK_REGISTRY}" record "${PROJECT_ROOT}" \
+      --attempt "${HPC_ATTEMPT_DIR}" --job-id "${job_id}" --generation "${generation}" --parent "${dependency#afterany:}"; then
+    echo "WARNING: PBS accepted ${job_id}; JSON registration failed. The recovery receipt retains its ID. Do not resubmit." >&2
+  fi
+  printf '%s\n' "${job_id}"
 }

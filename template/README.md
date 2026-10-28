@@ -17,9 +17,13 @@ Choose the needed operation from this project's root:
 ./scripts/remote-workflow pull
 ```
 
+Use `bash scripts/hpc-status --manage` to hide/restore dashboard records: arrows move, Space selects, Enter applies, Tab switches to restoration, and q/Esc cancels. Changes affect only local visibility; `--history` includes hidden records.
+
 The project script defaults to its own project root, even when invoked by absolute path from another directory. To initialize another project, use `bash /path/to/skill/bin/remote-workflow init /absolute/project`; the skill-level command always needs an explicit target in this workflow. Initialization/binding does not start transfers, submit jobs, or enable background sync. Later, a request such as “sync the current project” reuses the saved binding.
 
 `submit` syncs again. Preview output includes per-file byte sizes; Agents must hand files >= 10 MiB to the user for transfer. CLI commands do not impose that size limit on human use. Set optional PBS executable paths and `CONDA_SH` if the non-interactive remote PATH lacks them.
+
+Submissions automatically create `outputs/runs/<run_id>/manifest.json` and `state.json`, recording PBS IDs, continuation relationships, logs and output paths. No manual `configs/hpc_tasks.json` entry is required. A local config-path reference lets the standalone global dashboard discover this project even after its jobs leave PBS. Set optional `HPC_TASK_LABEL` for a readable name and `ARTIFACT_FILE` for an expected result file. The default run identity uses the command and output paths; set distinct `HPC_RUN_ID` values when configurations/seeds inside the same command change, and use separate output paths. Automatic continuations use the saved attempt configuration. `scripts/hpc-status --history` includes completed tasks hidden by the default 24-hour view.
 
 For a full experiment, submit once: point `TRAIN_COMMAND` at a project wrapper that runs smoke, validates it, then `exec`s the resumable full run in the same PBS allocation. Smoke/validation failure stops the wrapper. Keep smoke state separate; only the validated full run writes `DONE_FILE`. The default `MAX_CONTINUATIONS=0` avoids prequeued follow-up jobs for single-slice work; explicitly enable a finite chain for longer full runs. Do not place `smoke && full` directly in `TRAIN_COMMAND`.
 

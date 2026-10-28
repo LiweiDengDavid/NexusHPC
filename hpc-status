@@ -2,9 +2,12 @@
 set -euo pipefail
 # Independent mode uses the skill collector; legacy project forwarding remains compatible.
 skill_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${1:-}" == --manage && -z "${HPC_STATUS_PROJECT:-}" && -f "${skill_dir}/.workflow/config.env" ]]; then
+    set -- --standalone "${skill_dir}" "$@"
+fi
 if [[ "${1:-}" == --standalone ]]; then
     shift
-    catalogue_dir="${1:?Usage: hpc-status --standalone CATALOGUE_DIR [--details|--json]}"
+    catalogue_dir="${1:?Usage: hpc-status --standalone CATALOGUE_DIR [--manage|--details|--json]}"
     shift
     catalogue_dir="$(cd -- "${catalogue_dir}" && pwd)"
     source "${catalogue_dir}/.workflow/config.env"
@@ -18,7 +21,7 @@ fi
 project_dir="${HPC_STATUS_PROJECT:-}"
 if [[ -z "${project_dir}" ]]; then
     if [[ $# -eq 0 || "$1" == --* ]]; then
-        echo 'Usage: hpc-status PROJECT_ROOT [--details|--json|--no-color]' >&2
+        echo 'Usage: hpc-status PROJECT_ROOT [--manage|--details|--json|--no-color]' >&2
         echo 'Alternatively set HPC_STATUS_PROJECT to the catalogue project.' >&2
         exit 2
     fi

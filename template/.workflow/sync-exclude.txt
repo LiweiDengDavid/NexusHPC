@@ -18,6 +18,7 @@ __pycache__/
 /.pytest_cache/
 /.ruff_cache/
 /tmp/
+/.workflow/backups/
 /outputs/
 /results/figures/
 /data/raw/

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -euo pipefail
+exec "${HPC_STATUS_REMOTE_PYTHON:-/usr/bin/python3}" -B "$(dirname "${BASH_SOURCE[0]}")/qsub_register.py" "$@"
